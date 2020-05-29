@@ -430,8 +430,21 @@ def accident_count_per_visibility():
             sum(accident_count) as accident_count
         from us_accidents_min
         group by 1
-        order by 2 desc
-        limit 10;
+        order by 1 asc;
+    """
+    render_streamlit_bar_chart(query,'visibility','accident_count',['accident_count'])
+
+
+def accident_count_per_visibility_zoom():
+    query = """
+        select
+            visibilitymi as visibility,
+            sum(accident_count) as accident_count
+        from us_accidents_min
+        where visibilitymi < 14
+        and visibilitymi >3
+        group by 1
+        order by 1 asc;
     """
     render_streamlit_bar_chart(query,'visibility','accident_count',['accident_count'])
 
@@ -484,6 +497,56 @@ def accident_count_sunrise_sunset():
         order by 2 desc;
     """
     render_streamlit_bar_chart(query,'sunrise_sunset','accident_count',['accident_count'])
+
+def accident_count_distancemi():
+    query = """
+        select
+            distancemi::money::numeric,
+            count(*) as accident_count
+        from us_accidents
+        group by 1
+        order by 1 asc
+        limit 10;
+    """
+    render_streamlit_bar_chart(query,'distancemi','accident_count',['accident_count'])
+
+def accident_count_windchill():
+    query = """
+        select
+            wind_chillf::money::numeric,
+            count(*) as accident_count
+        from us_accidents
+        where 
+            wind_chillf::money::numeric > -1
+        	and wind_chillf::money::numeric < 1
+        group by 1
+        order by 1 asc;
+    """
+    render_streamlit_bar_chart(query,'wind_chillf','accident_count',['accident_count'])
+
+def accident_count_precipitation():
+    query = """
+        select
+            precipitationin::money::numeric,
+            count(*) as accident_count
+        from us_accidents
+        group by 1
+        order by 1 asc;
+    """
+    render_streamlit_bar_chart(query,'precipitationin','accident_count',['accident_count'])
+
+def accident_count_precipitation_zoom():
+    query = """
+        select
+            precipitationin::money::numeric,
+            count(*) as accident_count
+        from us_accidents
+        where precipitationin::money::numeric < 0.16
+        group by 1
+        order by 1 asc;
+    """
+    render_streamlit_bar_chart(query,'precipitationin','accident_count',['accident_count'])
+
 
 def severity_over_year():
     query="""
@@ -625,7 +688,7 @@ def accident_map_locations(selected_state='TX',severity='1'):
 
 if __name__ == "__main__":
     columns = ['severity','distancemi','temperaturef','wind_chillf','humidity','pressurein','visibilitymi','wind_speedmph','precipitationin']
-
+    bar_chart_cols = ['']
     st.text('Accident Count per State/Severity')
     state_list = get_state_list()
 
@@ -653,7 +716,7 @@ if __name__ == "__main__":
 
     st.text('The following displays the accident count per Visibility Type (top 10):')
     accident_count_per_visibility()
-    set_spearman_process(['visibilitymi'])  
+    accident_count_per_visibility_zoom()
 
     st.text('The following displays the accident count per Weather Condition (top 10):')
     accident_count_per_weather_condition()
@@ -663,10 +726,19 @@ if __name__ == "__main__":
 
     st.text('The following displays the accident count per Wind Speed-mph:')
     accident_count_per_windmph()
-    set_spearman_process(['wind_speedmph'])
 
     st.text('The following displays the accident count per Sunrise/Sunset:')
     accident_count_sunrise_sunset()
+
+    st.text('Accident count per Distancemi (Length of the road extent affected by the accident):')
+    accident_count_distancemi()
+
+    st.text('Accident count/Wind Chill:')
+    accident_count_windchill()
+
+    st.text('Accident count/Precipitation:')
+    accident_count_precipitation()
+    accident_count_precipitation_zoom()
 
     st.text('Accident Count of Severity Per Year:')
     severity_over_year()
@@ -680,6 +752,6 @@ if __name__ == "__main__":
     # st.text('Accident Count per year during certain weather conditions:')
     # weather_over_quarter()
 
-    columns = ['distancemi','temperaturef','wind_chillf','humidity','pressurein','precipitationin']
+    columns = ['temperaturef','humidity','pressurein']
     # st.title('SPEARMAN ANALYSIS')
     set_spearman_process(columns)
