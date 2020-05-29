@@ -10,7 +10,7 @@ import altair as alt
 from vega_datasets import data
 from scipy.stats import spearmanr,pearsonr
 from sklearn.cluster import KMeans
-import matplotlib.pyplot as plt
+# import matplotlib.pyplot as plt
 main_spearman_list = []
 main_pearson_list = []
 
@@ -87,10 +87,9 @@ def get_us_accident_source(column_name, ordinal_values = False):
     if not ordinal_values:
         query = """
             select 
-                {0}::money::numeric,
-                count(*) as accident_count
-            from us_accidents
-                where replace({0},' ','') <> ''
+                {0},
+                sum(accident_count) as accident_count
+            from us_accidents_min
             group by 1;
         """.format(column_name)
     else:
@@ -111,6 +110,7 @@ def set_spearman_process(columns,ordinal_values=False):
     x_col = "accident_count"
     
     for y_col in columns:
+        print('current col: {0}'.format(y_col))
         source = get_us_accident_source(y_col,ordinal_values=ordinal_values)
         coef,p = spearmans_rank_correlation(source,y_col,x_col,ordinal_values=ordinal_values)
         return_dict = {"column_name":y_col,"coefficient":coef,"p":p}
@@ -177,20 +177,18 @@ if __name__ == "__main__":
     st.title('SPEARMAN ANALYSIS')
     set_spearman_process(columns)
     
-    ordinal_cols = ['wind_direction','side','weather_condition','crossing']
-    set_spearman_process(ordinal_cols,ordinal_values=True)
+    # ordinal_cols = ['wind_direction','side','weather_condition','crossing']
+    # set_spearman_process(ordinal_cols,ordinal_values=True)
 
     #pearson rank correlation
-    st.title('PEARSON ANALYSIS')
-    set_pearson_process(columns)
+    # st.title('PEARSON ANALYSIS')
+    # set_pearson_process(columns)
 
 
-    spearman_df = pd.DataFrame(main_spearman_list)    
-    st.header("Final Spearman Rank Correlation Table")
-    st.write(spearman_df)
+    # spearman_df = pd.DataFrame(main_spearman_list)    
+    # st.header("Final Spearman Rank Correlation Table")
+    # st.write(spearman_df)
 
-    pearson_df = pd.DataFrame(main_pearson_list)
-    st.header("Final Pearson Rank Correlation Table")
-    st.write(pearson_df)
-
-    
+    # pearson_df = pd.DataFrame(main_pearson_list)
+    # st.header("Final Pearson Rank Correlation Table")
+    # st.write(pearson_df)
