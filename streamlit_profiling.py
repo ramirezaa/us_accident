@@ -553,8 +553,8 @@ def severity_over_year():
             select
                 severity,
                 EXTRACT(YEAR FROM to_timestamp(start_time, 'YYYY/MM/DD'))::text as "year",
-                sum(accident_count) as accident_count
-            from us_accidents_min
+                count(*) as accident_count
+            from us_accidents
             group by 1,2 order by 2;
     """
     render_streamlit_line_chart(query,"year",'accident_count','severity')
@@ -571,8 +571,8 @@ def severity_over_quarter():
                         EXTRACT(quarter FROM to_timestamp(start_time, 'YYYY/MM/DD'))::text
                     )	
                 ) as time,
-                sum(accident_count) as accident_count
-            from us_accidents_min
+                count(*) as accident_count
+            from us_accidents
             group by 1,2 order by 2,3,1;
     """
     render_streamlit_line_chart(query,"time",'accident_count','severity')
@@ -583,8 +583,8 @@ def severity_over_month():
             select
                 severity,
                 to_char(date_trunc('month', to_timestamp(start_time, 'YYYY/MM/DD'))::date, 'YYYY-mm') as time,
-                sum(accident_count) as accident_count
-            from us_accidents_min
+                count(*) as accident_count
+            from us_accidents
             group by severity,date_trunc('month', to_timestamp(start_time, 'YYYY/MM/DD'))
             ORDER BY date_trunc('month', to_timestamp(start_time, 'YYYY/MM/DD'));
     """
