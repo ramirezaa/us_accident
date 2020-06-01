@@ -9,12 +9,13 @@ import streamlit as st
 import altair as alt
 from vega_datasets import data
 from scipy.stats import spearmanr,pearsonr
-from sklearn.cluster import KMeans
+from sklearn.cluster import KMeans,MiniBatchKMeans
+from sklearn.mixture import GaussianMixture
 
 main_spearman_list = []
 main_pearson_list = []
 
-def spearmans_rank_correlation(source,x_col,y_col,ordinal_values = False):
+def spearmans_rank_correlation(source,x_col,y_col,ordinal_values = False,n_clusters=3,clustering_method='KMeans'):
     
     column_names = source.columns
 
@@ -31,12 +32,30 @@ def spearmans_rank_correlation(source,x_col,y_col,ordinal_values = False):
     
     # variable_clustering(x_col,ordinal_values=ordinal_values)
     if not ordinal_values:
-        variable_clustering(x_col)
+        variable_clustering(x_col,n_clusters=n_clusters,clustering_method=clustering_method)
 
     # calculate spearman's correlation
     coef, p = spearmanr(source[x_col], source[y_col])
     
-    st.text("Spearmans correlation coefficient: {0}".format(coef))
+    st.markdown('**Spearman Measure**')
+    st.text("Correlation coefficient: {0}".format(coef))
+
+    # interpret the significance
+    alpha = 0.05
+    if p > alpha:
+        st.text('Samples are uncorrelated (fail to reject H0) p={0}'.format(p) )
+    else:
+        st.text('Samples are correlated (reject H0) p={0}'.format(p) )
+
+    return coef,p
+
+def spearmans_rank_correlation_solo(source,x_col,y_col):
+    
+    # calculate spearman's correlation
+    coef, p = spearmanr(source[x_col], source[y_col])
+    
+    st.markdown('**Spearman Measure**')
+    st.text("Correlation coefficient: {0}".format(coef))
 
     # interpret the significance
     alpha = 0.05
@@ -49,23 +68,24 @@ def spearmans_rank_correlation(source,x_col,y_col,ordinal_values = False):
 
 def pearson_rank_correlation(source,x_col,y_col):
     
-    column_names = source.columns
+    # column_names = source.columns
 
-    for name in column_names:
-        source[name].fillna(0, inplace=True)
+    # for name in column_names:
+    #     source[name].fillna(0, inplace=True)
 
-    st.markdown("**{0} vs. {1} **".format(x_col,y_col))
-    container = alt.Chart(source).mark_point().encode(
-        x=x_col,
-        y=y_col
-    )
+    # st.markdown("**{0} vs. {1} **".format(x_col,y_col))
+    # container = alt.Chart(source).mark_point().encode(
+    #     x=x_col,
+    #     y=y_col
+    # )
 
-    st.altair_chart(container, use_container_width=True)
+    # st.altair_chart(container, use_container_width=True)
     
     # calculate spearman's correlation
     coef, p = pearsonr(source[x_col], source[y_col])
     
-    st.text("Pearson correlation coefficient: {0}".format(coef))
+    st.markdown('**Pearson Measure**')
+    st.text("Correlation coefficient: {0}".format(coef))
 
     # interpret the significance
     alpha = 0.05
@@ -80,7 +100,7 @@ def pearson_rank_correlation(source,x_col,y_col):
 def get_data_source():
     return data.cars()
 
-def get_us_accident_source(column_name, ordinal_values = False):
+def get_us_accident_source(column_name, ordinal_values = False, limit = '', order='', where=''):
     db_object = DBConnect()
     conn = db_object.get_con()
     
@@ -89,9 +109,11 @@ def get_us_accident_source(column_name, ordinal_values = False):
             select 
                 {0},
                 sum(accident_count) as accident_count
-            from us_accidents_min
-            group by 1;
-        """.format(column_name)
+            from us_accidents_min {1}            
+            group by 1
+            {2}
+            {3};
+        """.format(column_name, where, order, limit)
     else:
         query = """
             select
@@ -105,16 +127,36 @@ def get_us_accident_source(column_name, ordinal_values = False):
 
     return df
 
-def set_spearman_process(columns,ordinal_values=False):
+def set_spearman_process(columns,n_clusters=3,clustering_method='KMeans',ordinal_values=False):
     
     x_col = "accident_count"
     
     for y_col in columns:
-        print('current col: {0}'.format(y_col))
+        # print('current col: {0}'.format(y_col))
         source = get_us_accident_source(y_col,ordinal_values=ordinal_values)
-        coef,p = spearmans_rank_correlation(source,y_col,x_col,ordinal_values=ordinal_values)
-        return_dict = {"column_name":y_col,"coefficient":coef,"p":p}
-        main_spearman_list.append(return_dict)
+        spearmans_rank_correlation(source,y_col,x_col,ordinal_values=ordinal_values,n_clusters=n_clusters,clustering_method=clustering_method)
+        pearson_rank_correlation(source,y_col,x_col)
+        # coef,p = spearmans_rank_correlation(source,y_col,x_col,ordinal_values=ordinal_values,n_clusters=n_clusters,clustering_method=clustering_method)
+        # return_dict = {"column_name":y_col,"coefficient":coef,"p":p}
+        # main_spearman_list.append(return_dict)
+
+def set_bar_chart_process(columns,ordinal_values=False):
+    
+    x_col = "accident_count"
+    
+    for obj in columns:
+        y_col = obj['col']
+        limit = obj['limit']
+        order = obj['order']
+        where = obj['where']
+        is_numeric = obj['is_numeric']
+        st.text(obj['title'])
+        source = get_us_accident_source(y_col,ordinal_values=ordinal_values,limit=limit,order=order,where=where)
+        render_streamlit_bar_chart(source,y_col,x_col,[x_col])
+        
+        if is_numeric:
+            spearmans_rank_correlation_solo(source,y_col,x_col)
+            pearson_rank_correlation(source,y_col,x_col)
 
 def set_pearson_process(columns,ordinal_values=False):
     x_col = "accident_count"
@@ -125,7 +167,7 @@ def set_pearson_process(columns,ordinal_values=False):
         main_pearson_list.append(return_dict)
 
 def get_clustering_source(column_name,ordinal_values=False):
-    print("get_clustering_source: {0}".format(ordinal_values ) )
+    # print("get_clustering_source: {0}".format(ordinal_values ) )
     if not ordinal_values:
         query = """
                 select
@@ -153,14 +195,27 @@ def get_clustering_source(column_name,ordinal_values=False):
 
     return df
 
-def variable_clustering(column_name,ordinal_values=False):
+def variable_clustering(column_name,ordinal_values=False,n_clusters=3,clustering_method='KMeans'):
 
     df = get_clustering_source(column_name,ordinal_values=ordinal_values)
-    kmeans = KMeans(n_clusters=3)
-    kmeans.fit(df)
-    df['labels'] = kmeans.labels_
 
-    st.markdown("** K-means clustering K=3: {0} vs. {1} **".format(column_name,'accident_count'))
+    cluster_method = clustering_method.replace(' ','').lower()
+
+    clustered_data = None
+    if cluster_method == 'kmeans':
+        print('k means')
+        clustered_data = KMeans(n_clusters=n_clusters)
+
+    elif cluster_method == 'kmeansminibatch':
+        print('k means minibatch')
+        clustered_data = MiniBatchKMeans(n_clusters=n_clusters,random_state=0,batch_size=6)
+    # elif cluster_method == 'gaussianmixture':
+    #     print('gaussian mixture')
+    #     clustered_data = GaussianMixture(n_components=n_clusters)
+    
+    clustered_data.fit(df)
+    df['labels'] = clustered_data.labels_
+
     container = alt.Chart(df).mark_point().encode(
         x=column_name,
         y="accident_count",
@@ -230,104 +285,9 @@ def write_list_to_csv(dict_param,file_name):
         w.writeheader()
         w.writerow(dict_param)
 
-# def accident_count_per_year():
-#     query = """
-#         SELECT 
-#             EXTRACT(YEAR FROM to_timestamp("start_time", 'YYYY-MM-DD'))::text as accident_year,
-#             sum(accident_count) as accident_count
-#         from us_accidents_min
-#         group by 1 order by 1;
-#     """
-
-#     db_object = DBConnect()
-#     conn = db_object.get_con()
-#     df = pd.read_sql(query,conn)
-#     db_object.close()
-
-#     x = df['accident_year']
-#     y = df['accident_count']
-
-# def plot():
-#     query = """
-#         select 
-#             severity,
-#             state
-#         from us_accidents_min limit 10;
-#     """
-
-#     db_object = DBConnect()
-#     conn = db_object.get_con()
-#     df = pd.read_sql(query,conn)
-#     db_object.close()
-
-#     y = df['state']#np.sin(x)
-#     x = df['severity']#np.linspace(0, 10, 30)
-    
-#     plt.plot(x, y, 'o', color='black')
-#     plt.show()
-
-# def plot_bar_chart(query,x_label,y_label,title_label):
-#     db_object = DBConnect()
-#     conn = db_object.get_con()
-#     df = pd.read_sql(query,conn)
-#     db_object.close()
-
-#     x_axis = list(df[x_label])
-#     x_axis_len = len(x_axis)
-#     accident_count = list(df[y_label])
-#     ind = np.arange(x_axis_len)
-#     width = 0.35       
-
-    
-#     pl = plt.subplots(figsize=(16,8))
-#     plt.bar(ind, accident_count, width)
-    
-#     plt.ylabel('Accident Count')
-#     plt.title('Accident Count Per {0}'.format(title_label))    
-#     plt.xticks(ind, x_axis)
-
-# def severity_over_time_plot(query,fig_width=16,fig_height=8):
-#     db_object = DBConnect()
-#     conn = db_object.get_con()
-#     df = pd.read_sql(query,conn)
-#     db_object.close()
-    
-#     year_list = list(df['year'].unique())
-#     severity_list = list(df['severity'].sort_values().unique())    
-#     plt.subplots(figsize=(fig_width,fig_height))
-#     for severity in severity_list:
-#         val_list = []
-#         for year in year_list:
-#             val = df.loc[(df['severity'] == severity) & (df['year']==year),'accident_count'].sum()
-#             val_list.append(val)
-#         plt.plot(year_list, val_list,label='severity {0}'.format(severity))        
-    
-#     plt.legend()
-#     plt.suptitle('Accidents vs. Time/severity')
-    
-# def severity_over_time_plot(query,x_label,y_label,title_label,fig_width=16,fig_height=8):
-#     db_object = DBConnect()
-#     conn = db_object.get_con()
-#     df = pd.read_sql(query,conn)
-#     db_object.close()
-    
-#     year_list = list(df[x_label].unique())
-#     severity_list = list(df[y_label].sort_values().unique())    
-#     plt.subplots(figsize=(fig_width,fig_height))
-#     for severity in severity_list:
-#         val_list = []
-#         for year in year_list:
-#             val = df.loc[(df[y_lable] == severity) & (df[x_label]==year),'accident_count'].sum()
-#             val_list.append(val)
-#         plt.plot(year_list, val_list,label='{1} {0}'.format(severity))        
-    
-#     plt.legend()
-#     plt.suptitle(title_label)
-
-def render_streamlit_bar_chart(query,x_axis,y_axis,tooltip):
+def render_streamlit_bar_chart(df,x_axis,y_axis,tooltip):
     db_object = DBConnect()
     conn = db_object.get_con()
-    df = pd.read_sql(query,conn)
     container = alt.Chart(df).mark_bar().encode(
             x=alt.X(x_axis+":O",sort=None), 
             y=y_axis,tooltip=tooltip
@@ -347,206 +307,6 @@ def render_streamlit_line_chart(query,x_axis,y_axis,metric):
             tooltip=metric
             )
     st.altair_chart(container, use_container_width=True)
-
-def accident_count_per_year():
-    query = """
-        SELECT 
-            "year"::text as accident_year,
-            sum(accident_count) as accident_count
-        from us_accidents_min
-        group by 1 order by 1;
-    """
-
-    render_streamlit_bar_chart(query,'accident_year','accident_count',['accident_count'])
-
-def accident_count_per_tmc():
-    query = """
-        select
-            case
-                when tmc = '' then  'NULL'
-                else tmc
-            end as tmc,
-            sum(accident_count) as accident_count
-        from us_accidents_min
-        group by 1 order by 1 desc;
-    """
-    
-    render_streamlit_bar_chart(query,'tmc','accident_count',['accident_count'])
-
-def accident_count_per_severity():
-    query = """
-        select
-            severity,
-            sum(accident_count) as accident_count
-        from us_accidents_min
-        group by 1 order by 1 asc;
-    """
-    
-    render_streamlit_bar_chart(query,'severity','accident_count',['accident_count'])
-    
-def accident_count_per_state():
-    query = """
-        select
-            state,
-            sum(accident_count) as accident_count
-        from us_accidents_min
-        group by 1
-        order by 2 desc
-        limit 10;
-    """
-
-    render_streamlit_bar_chart(query,'state','accident_count',['accident_count'])
-
-
-def accident_count_per_city():
-    query = """
-        select
-            city,
-            sum(accident_count) as accident_count
-        from us_accidents_min
-        group by 1
-        order by 2 desc
-        limit 10;
-    """
-    render_streamlit_bar_chart(query,'city','accident_count',['accident_count'])
-
-def accident_count_per_zipcode():
-    query = """
-        select
-            zipcode,
-            sum(accident_count) as accident_count
-        from us_accidents_min
-        group by 1
-        order by 2 desc
-        limit 10;
-    """
-    render_streamlit_bar_chart(query,'zipcode','accident_count',['accident_count'])
-
-
-def accident_count_per_visibility():
-    query = """
-        select
-            visibilitymi as visibility,
-            sum(accident_count) as accident_count
-        from us_accidents_min
-        group by 1
-        order by 1 asc;
-    """
-    render_streamlit_bar_chart(query,'visibility','accident_count',['accident_count'])
-
-
-def accident_count_per_visibility_zoom():
-    query = """
-        select
-            visibilitymi as visibility,
-            sum(accident_count) as accident_count
-        from us_accidents_min
-        where visibilitymi < 14
-        and visibilitymi >3
-        group by 1
-        order by 1 asc;
-    """
-    render_streamlit_bar_chart(query,'visibility','accident_count',['accident_count'])
-
-def accident_count_per_weather_condition():
-    query = """
-        select
-            weather_condition,
-            sum(accident_count) as accident_count
-        from us_accidents_min
-        group by 1
-        order by 2 desc
-        limit 10;
-    """
-    render_streamlit_bar_chart(query,'weather_condition','accident_count',['accident_count'])
-
-def accident_count_per_speed_bump():
-    query = """
-        select
-            bump,
-            sum(accident_count) as accident_count
-        from us_accidents_min
-        group by 1
-        order by 2 desc
-        limit 10;
-    """
-    render_streamlit_bar_chart(query,'bump','accident_count',['accident_count'])
-
-def accident_count_per_windmph():
-    query = """
-        select
-            wind_speedmph,
-            sum(accident_count) as accident_count
-        from us_accidents_min
-        group by 1
-        order by 2 desc
-        limit 10;
-    """
-    render_streamlit_bar_chart(query,'wind_speedmph','accident_count',['accident_count'])
-
-def accident_count_sunrise_sunset():
-    query = """
-        select
-            case 
-                when sunrise_sunset = '' then 'NULL'
-                else sunrise_sunset
-            end as sunrise_sunset,
-            count(*) as accident_count
-        from us_accidents
-        group by 1
-        order by 2 desc;
-    """
-    render_streamlit_bar_chart(query,'sunrise_sunset','accident_count',['accident_count'])
-
-def accident_count_distancemi():
-    query = """
-        select
-            distancemi::money::numeric,
-            count(*) as accident_count
-        from us_accidents
-        group by 1
-        order by 1 asc
-        limit 10;
-    """
-    render_streamlit_bar_chart(query,'distancemi','accident_count',['accident_count'])
-
-def accident_count_windchill():
-    query = """
-        select
-            wind_chillf::money::numeric,
-            count(*) as accident_count
-        from us_accidents
-        where 
-            wind_chillf::money::numeric > -1
-        	and wind_chillf::money::numeric < 1
-        group by 1
-        order by 1 asc;
-    """
-    render_streamlit_bar_chart(query,'wind_chillf','accident_count',['accident_count'])
-
-def accident_count_precipitation():
-    query = """
-        select
-            precipitationin::money::numeric,
-            count(*) as accident_count
-        from us_accidents
-        group by 1
-        order by 1 asc;
-    """
-    render_streamlit_bar_chart(query,'precipitationin','accident_count',['accident_count'])
-
-def accident_count_precipitation_zoom():
-    query = """
-        select
-            precipitationin::money::numeric,
-            count(*) as accident_count
-        from us_accidents
-        where precipitationin::money::numeric < 0.16
-        group by 1
-        order by 1 asc;
-    """
-    render_streamlit_bar_chart(query,'precipitationin','accident_count',['accident_count'])
-
 
 def severity_over_year():
     query="""
@@ -651,21 +411,6 @@ def get_accident_map_locations_df(selected_state='TX',severity='1'):
     return df
 
 def accident_map_locations(selected_state='TX',severity='1'):
-    # query = """
-    #     select
-    #         latitude,
-    #         longitude
-    #     from lat_long_by_state_severity
-    #     where 
-    #         state = '{0}'
-    #         and severity = '{1}'
-    #     group by 1,2;
-    # """.format(selected_state,severity)
-    
-    # db_object = DBConnect()
-    # conn = db_object.get_con()
-    # df = pd.read_sql(query,conn)
-
     df = get_accident_map_locations_df(selected_state=selected_state,severity=severity)
     
     states = alt.topo_feature(data.us_10m.url, feature='states')
@@ -675,7 +420,7 @@ def accident_map_locations(selected_state='TX',severity='1'):
         fill='lightgray',
         stroke='white'
     ).properties(
-        width=1200,
+        width=1000,
         height=800
     ).project('albersUsa')
 
@@ -687,58 +432,48 @@ def accident_map_locations(selected_state='TX',severity='1'):
     background + points
 
 if __name__ == "__main__":
-    columns = ['severity','distancemi','temperaturef','wind_chillf','humidity','pressurein','visibilitymi','wind_speedmph','precipitationin']
-    bar_chart_cols = ['']
+    bar_chart_cols = [  
+                        {'col': 'year', 'limit':'', 'order':'', 'where':'','title':'','is_numeric':False},
+                        {'col': 'tmc', 'limit':'', 'order':'', 'where':'','title':'Note: \n TMC = Traffic Message Channel (a code poviding a more detailed description of the event)','is_numeric':False},
+                        {'col': 'severity', 'limit':'', 'order':'', 'where':'','title':'Note: \n1 indicates least impact on traffic, \n4 indicates a significant impact on traffic i.e. long delay','is_numeric':False},
+                        # {'col': 'state', 'limit':'', 'order':'', 'where':'','title':'','is_numeric':False},
+                        {'col': 'state', 'limit':'limit 10', 'order':'order by 2 desc', 'where':'','title':'','is_numeric':False},
+                        {'col': 'city', 'limit': 'limit 10','order': 'order by 2 desc','where':'','title':'','is_numeric':False},
+                        {'col': 'zipcode','where':'', 'order': 'order by 2 desc', 'limit': 'limit 10','title':'','is_numeric':False},
+                        # {'col': 'visibilitymi', 'order': 'order by 1 asc', 'limit':'', 'where':'','title':'','is_numeric':True},
+                        {'col': 'visibilitymi', 'order': 'order by 1 asc','where': 'where visibilitymi < 14 and visibilitymi >3','limit':'','title':'','is_numeric':True},
+                        # {'col': 'weather_condition', 'limit':'', 'order':'', 'where':'','title':'','is_numeric':False},
+                        {'col': 'weather_condition', 'limit':'limit 10', 'order':'order by 2 desc', 'where':'','title':'','is_numeric':False},
+                        {'col': 'bump', 'limit':'', 'order':'', 'where':'','title':'','is_numeric':False},
+                        {'col': 'wind_speedmph', 'limit':'limit 10', 'order':'order by 2 desc', 'where':'','title':'','is_numeric':True},
+                        {'col': 'sunrise_sunset', 'limit':'', 'order':'', 'where':'','title':'','is_numeric':False},
+                        # {'col': 'distancemi', 'limit':'limit 20', 'order':'order by 1 asc', 'where':'','title':'Note: The length of the road extent extent affected by the accident','is_numeric':True},
+                        {'col': 'wind_chillf', 'limit':'', 'order':'order by 1 asc', 'where':' where wind_chillf::money::numeric > -1 and wind_chillf::money::numeric < 1','title':'','is_numeric':True},
+                        # {'col': 'precipitationin', 'limit':'', 'order':'', 'where':'','title':'','is_numeric':True},
+                        {'col': 'precipitationin', 'limit':'', 'order':'order by 1 asc', 'where': ' where precipitationin::money::numeric < 0.16','title':'','is_numeric':True}
+                    ]
+
+    add_clustering_method = st.sidebar.selectbox(
+        'Clustering Method',
+        ('KMeans', 'KMeansMiniBatch')
+    )
+
+    # Add a slider to the sidebar:
+    add_slider_clusters = st.sidebar.slider(
+        'Select a range of values',
+        0, 10,(3)
+    )
+    ## columns = ['severity','distancemi','temperaturef','wind_chillf','humidity','pressurein','visibilitymi','wind_speedmph','precipitationin']
+    
     st.text('Accident Count per State/Severity')
     state_list = get_state_list()
 
-    selected_state = st.selectbox('Select State',state_list)
-    selected_severity = st.selectbox('Select Severity',['1','2','3','4'])
+    selected_state = st.sidebar.selectbox('Select State',state_list)
+    selected_severity = st.sidebar.selectbox('Select Severity',['1','2','3','4'])
     accident_map_locations(selected_state=selected_state,severity=selected_severity)
 
-    st.text('The following displays the accident count per year from 2015-2020:')
-    accident_count_per_year()
-
-    st.text('The following displays the accident count per Traffic Message Control (TMC):')
-    accident_count_per_tmc()
-
-    st.text('The following displays the accident count per Severity:')
-    accident_count_per_severity()
-
-    st.text('The following displays the accident count per State (top 10):')
-    accident_count_per_state()
-
-    st.text('The following displays the accident count per City (top 10):')
-    accident_count_per_city()
-
-    st.text('The following displays the accident count per Zipcode (top 10):')
-    accident_count_per_zipcode()
-
-    st.text('The following displays the accident count per Visibility Type (top 10):')
-    accident_count_per_visibility()
-    accident_count_per_visibility_zoom()
-
-    st.text('The following displays the accident count per Weather Condition (top 10):')
-    accident_count_per_weather_condition()
-
-    st.text('The following displays the accident count per Speed Bump:')
-    accident_count_per_speed_bump()
-
-    st.text('The following displays the accident count per Wind Speed-mph:')
-    accident_count_per_windmph()
-
-    st.text('The following displays the accident count per Sunrise/Sunset:')
-    accident_count_sunrise_sunset()
-
-    st.text('Accident count per Distancemi (Length of the road extent affected by the accident):')
-    accident_count_distancemi()
-
-    st.text('Accident count/Wind Chill:')
-    accident_count_windchill()
-
-    st.text('Accident count/Precipitation:')
-    accident_count_precipitation()
-    accident_count_precipitation_zoom()
+    # st.text('The following displays the accident count per year from 2015-2020:')
+    set_bar_chart_process(bar_chart_cols)
 
     st.text('Accident Count of Severity Per Year:')
     severity_over_year()
@@ -749,9 +484,9 @@ if __name__ == "__main__":
     st.text('Accident Count of Severity Per Year-Month :')
     severity_over_month()
 
-    # st.text('Accident Count per year during certain weather conditions:')
-    # weather_over_quarter()
+    st.text('Accident Count per year during certain weather conditions:')
+    weather_over_quarter()
 
     columns = ['temperaturef','humidity','pressurein']
-    # st.title('SPEARMAN ANALYSIS')
-    set_spearman_process(columns)
+    # # st.title('SPEARMAN ANALYSIS')
+    set_spearman_process(columns,n_clusters=add_slider_clusters,clustering_method=add_clustering_method)
